@@ -1,4 +1,7 @@
 const { JWT_SECRET } = require("../secrets"); // bu secreti kullanın!
+const userModel = require("../users/users-model");
+const jwt = require("jsonwebtoken");
+const bcryptjs = require("bcryptjs");
 
 const sinirli = (req, res, next) => {
   /*
@@ -16,6 +19,23 @@ const sinirli = (req, res, next) => {
 
     Alt akıştaki middlewarelar için hayatı kolaylaştırmak için kodu çözülmüş tokeni req nesnesine koyun!
   */
+    try {
+      let token = req.headers.authorization;
+      if(!token) {
+        res.status(401).json({ "message":  "Token gereklidir"});
+      } else {
+        jwt.verify(token,JWT_SECRET,(err,decodedToken) => {
+          if(err) {
+            res.status(401).json({message:"token gecersizdir"});
+          } else {
+            req.decodedToken = decodedToken;
+            next();
+          }
+        })
+      }
+    } catch (error) {
+      next(error);
+    }
 }
 
 const sadece = role_name => (req, res, next) => {
@@ -30,10 +50,19 @@ const sadece = role_name => (req, res, next) => {
 
     Tekrar authorize etmekten kaçınmak için kodu çözülmüş tokeni req nesnesinden çekin!
   */
+try {
+  if(req.decodedToken.role_name === role_name) {
+    next();
+  } else {
+    res.status(403).json({message: "Bu, senin için değil"});
+  }
+} catch (error) {
+  next(error);
+}
 }
 
 
-const usernameVarmi = (req, res, next) => {
+const usernameVarmi = async (req, res, next) => {
   /*
     req.body de verilen username veritabanında yoksa
     status: 401
@@ -41,7 +70,15 @@ const usernameVarmi = (req, res, next) => {
       "message": "Geçersiz kriter"
     }
   */
-}
+  const { username } = req.body;
+  const [user] = await userModel.goreBul({username: username});
+  if(!user) {
+    res.status(401).json({"message": "Geçersiz kriter"})
+  } else {
+    next();
+  }
+} 
+
 
 
 const rolAdiGecerlimi = (req, res, next) => {
@@ -63,6 +100,38 @@ const rolAdiGecerlimi = (req, res, next) => {
       "message": "rol adı 32 karakterden fazla olamaz"
     }
   */
+ try {
+  let role_name = req.body.role_name;
+  if(!role_name) {
+    req.body.role_name = "student";
+    next();
+  } else {
+    role_name = role_name.trim();
+    if(role_name.length > 32) {
+      res.status(422).json({message: "rol adı 32 karakterden fazla olamaz"})
+    } else if(role_name == "admin") {
+      res.status(422).json({message: "Rol adı admin olamaz"})
+    } else {
+      req.body.role_name = role_name;
+      next();
+    }
+  }
+ } catch (error) {
+  next(error);
+ }
+}
+
+const checkPayload = (req,res,next) => {
+  try {
+    let { username, password } = req.body;
+    if(!username || !password) {
+      res.status(400).json({message: "Eksik alanları kontrol edin"});
+    } else {
+      next();
+    }
+  } catch (error) {
+    next(error)
+  }
 }
 
 module.exports = {
@@ -70,4 +139,5 @@ module.exports = {
   usernameVarmi,
   rolAdiGecerlimi,
   sadece,
+  checkPayload
 }
